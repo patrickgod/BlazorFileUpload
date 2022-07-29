@@ -1,6 +1,8 @@
-﻿using BlazorFileUpload.Shared;
+﻿using BlazorFileUpload.Server.Data;
+using BlazorFileUpload.Shared;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Net;
 
 namespace BlazorFileUpload.Server.Controllers
@@ -10,10 +12,28 @@ namespace BlazorFileUpload.Server.Controllers
     public class FileController : ControllerBase
     {
         private readonly IWebHostEnvironment _env;
+        private readonly DataContext _context;
 
-        public FileController(IWebHostEnvironment env)
+        public FileController(IWebHostEnvironment env, DataContext context)
         {
             _env = env;
+            _context = context;
+        }
+
+        [HttpGet("{fileName}")]
+        public async Task<IActionResult> DownloadFile(string fileName)
+        {
+            var uploadResult = await _context.Uploads.FirstOrDefaultAsync(u => u.StoredFileName.Equals(fileName));
+
+            var path = Path.Combine(_env.ContentRootPath, "uploads", fileName);
+
+            var memory = new MemoryStream();
+            using (var stream = new FileStream(path, FileMode.Open))
+            {
+                await stream.CopyToAsync(memory);
+            }
+            memory.Position = 0;
+            return File(memory, uploadResult.ContentType, Path.GetFileName(path));
         }
 
         [HttpPost]
@@ -27,7 +47,7 @@ namespace BlazorFileUpload.Server.Controllers
                 string trustedFileNameForFileStorage;
                 var untrustedFileName = file.FileName;
                 uploadResult.FileName = untrustedFileName;
-                var trustedFileNameForDisplay = WebUtility.HtmlEncode(untrustedFileName);
+                //var trustedFileNameForDisplay = WebUtility.HtmlEncode(untrustedFileName);
 
                 trustedFileNameForFileStorage = Path.GetRandomFileName();
                 var path = Path.Combine(_env.ContentRootPath, "uploads", trustedFileNameForFileStorage);
@@ -36,8 +56,13 @@ namespace BlazorFileUpload.Server.Controllers
                 await file.CopyToAsync(fs);
 
                 uploadResult.StoredFileName = trustedFileNameForFileStorage;
+                uploadResult.ContentType = file.ContentType;
                 uploadResults.Add(uploadResult);
+
+                _context.Uploads.Add(uploadResult);
             }
+
+            await _context.SaveChangesAsync();
 
             return Ok(uploadResults);
         }

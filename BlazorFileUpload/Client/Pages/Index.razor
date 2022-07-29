@@ -2,6 +2,7 @@
 @using System.Net.Http.Headers
 @using BlazorFileUpload.Shared
 @inject HttpClient Http
+@inject IJSRuntime JS
 
 <PageTitle>Upload Files</PageTitle>
 
@@ -20,6 +21,7 @@
                 <span>
                     Stored File Name: @GetStoredFileName(fileName)
                 </span>
+                <button @onclick="@(() => DownloadFile(GetStoredFileName(fileName), fileName))">Download file</button>
             </li>
         }
     </ul>
@@ -64,5 +66,21 @@
             return uploadResult.StoredFileName;
 
         return "File not found.";
+    }
+
+    private async Task DownloadFile(string storedFileName, string originalFileName)
+    {
+        var response = await Http.GetAsync($"/api/File/{storedFileName}");
+
+        if(!response.IsSuccessStatusCode)
+        {
+            await JS.InvokeVoidAsync("alert", "File not found.");
+        }
+        else
+        {
+            var fileStream = response.Content.ReadAsStream();
+            using var streamRef = new DotNetStreamReference(stream: fileStream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", originalFileName, streamRef);
+        }
     }
 }
